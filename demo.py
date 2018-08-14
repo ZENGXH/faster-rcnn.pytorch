@@ -11,6 +11,7 @@ import _init_paths
 import os
 import sys
 import numpy as np
+import json
 import argparse
 import pprint
 import pdb
@@ -146,6 +147,7 @@ if __name__ == '__main__':
 
   if args.cfg_file is not None:
     cfg_from_file(args.cfg_file)
+  args.set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]']
   if args.set_cfgs is not None:
     cfg_from_list(args.set_cfgs)
 
@@ -164,22 +166,30 @@ if __name__ == '__main__':
   load_name = os.path.join(input_dir,
     'faster_rcnn_{}_{}_{}.pth'.format(args.checksession, args.checkepoch, args.checkpoint))
 
-  pascal_classes = np.asarray(['__background__',
+  coco_classes = np.asarray(['__background__',
                        'aeroplane', 'bicycle', 'bird', 'boat',
                        'bottle', 'bus', 'car', 'cat', 'chair',
                        'cow', 'diningtable', 'dog', 'horse',
                        'motorbike', 'person', 'pottedplant',
                        'sheep', 'sofa', 'train', 'tvmonitor'])
-
+  coco_classes = json.load(open('annotations/image_info_test2017.json', 'r'))
+  coco_classes = coco_classes['categories']
+  coco_classes = [c['name'] for c in coco_classes]
+  classes = ['__background__'] + coco_classes
+  #'__background__'
+  print('classes', classes, len(classes))
+  coco_classes = classes
   # initilize the network here.
   if args.net == 'vgg16':
-    fasterRCNN = vgg16(pascal_classes, pretrained=False, class_agnostic=args.class_agnostic)
+    fasterRCNN = vgg16(coco_classes, pretrained=False, class_agnostic=args.class_agnostic)
   elif args.net == 'res101':
-    fasterRCNN = resnet(pascal_classes, 101, pretrained=False, class_agnostic=args.class_agnostic)
+    fasterRCNN = resnet(coco_classes, 101, pretrained=False, class_agnostic=args.class_agnostic)
   elif args.net == 'res50':
-    fasterRCNN = resnet(pascal_classes, 50, pretrained=False, class_agnostic=args.class_agnostic)
+    fasterRCNN = resnet(coco_classes, 50, pretrained=False, class_agnostic=args.class_agnostic)
   elif args.net == 'res152':
-    fasterRCNN = resnet(pascal_classes, 152, pretrained=False, class_agnostic=args.class_agnostic)
+    fasterRCNN = resnet(coco_classes, 152, pretrained=False, class_agnostic=args.class_agnostic)
+  #elif args.net == 'resnet':
+  #  fasterRCNN
   else:
     print("network is not defined")
     pdb.set_trace()
@@ -314,7 +324,7 @@ if __name__ == '__main__':
                 else:
                     box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS) \
                                + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS)
-                box_deltas = box_deltas.view(1, -1, 4 * len(pascal_classes))
+                box_deltas = box_deltas.view(1, -1, 4 * len(coco_classes))
 
           pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
           pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
@@ -331,7 +341,7 @@ if __name__ == '__main__':
       misc_tic = time.time()
       if vis:
           im2show = np.copy(im)
-      for j in xrange(1, len(pascal_classes)):
+      for j in xrange(1, len(coco_classes)):
           inds = torch.nonzero(scores[:,j]>thresh).view(-1)
           # if there is det
           if inds.numel() > 0:
@@ -348,7 +358,7 @@ if __name__ == '__main__':
             keep = nms(cls_dets, cfg.TEST.NMS, force_cpu=not cfg.USE_GPU_NMS)
             cls_dets = cls_dets[keep.view(-1).long()]
             if vis:
-              im2show = vis_detections(im2show, pascal_classes[j], cls_dets.cpu().numpy(), 0.5)
+              im2show = vis_detections(im2show, coco_classes[j], cls_dets.cpu().numpy(), 0.5)
 
       misc_toc = time.time()
       nms_time = misc_toc - misc_tic
@@ -361,7 +371,7 @@ if __name__ == '__main__':
       if vis and webcam_num == -1:
           # cv2.imshow('test', im2show)
           # cv2.waitKey(0)
-          result_path = os.path.join(args.image_dir, imglist[num_images][:-4] + "_det.jpg")
+          result_path = os.path.join('output', imglist[num_images][:-4] + "_det.jpg")
           cv2.imwrite(result_path, im2show)
       else:
           im2showRGB = cv2.cvtColor(im2show, cv2.COLOR_BGR2RGB)
